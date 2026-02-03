@@ -1,32 +1,49 @@
-version: "3.8"
+pipeline {
+    agent any
 
-services:
-  mysql:
-    image: mysql:8.0
-    container_name: mysql
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpass
-      MYSQL_DATABASE: flaskdb
-      MYSQL_USER: flaskuser
-      MYSQL_PASSWORD: flaskpass
-    volumes:
-      - mysql_data:/var/lib/mysql
+    environment {
+        DOCKERHUB_USER = 'srinivasedugutta'
+        IMAGE_NAME = 'flask-mysql-app'
+    }
 
-  flask:
-    image: docker.io/srinivasedugutta/flask-mysql-app:latest
-    container_name: flask_app
-    restart: always
-    ports:
-      - "8080:5000"
-    depends_on:
-      - mysql
-    environment:
-      DB_HOST: mysql
-      DB_USER: flaskuser
-      DB_PASSWORD: flaskpass
-      DB_NAME: flaskdb
+    stages {
 
-volumes:
-  mysql_data:
+        stage('Clone Repository') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/srinivasedugutta/flask-mysql-devops.git'
+            }
+        }
 
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t $DOCKERHUB_USER/$IMAGE_NAME:latest .'
+            }
+        }
+
+        stage('Docker Login') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                }
+            }
+        }
+
+        stage('Push Image to Docker Hub') {
+            steps {
+                sh 'docker push $DOCKERHUB_USER/$IMAGE_NAME:latest'
+            }
+        }
+
+        stage('Deploy with Docker Compose') {
+            steps {
+                sh 'docker compose down || true'
+                sh 'docker compose up -d'
+            }
+        }
+    }
+}
